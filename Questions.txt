@@ -1,3 +1,7 @@
-1 - How do we deal with the naming conventions?
+1 - How do we deal with the naming conventions? Should we work by disease types, some form of aggregation or something else?
 
 2 - Should we try to do the classification, or just do binary analysis?
+
+3 - There are 3 types of images (colored, grayscale and segmented). Should we work individually? Should we convert them to grayscale and work with the bigger sample?
+
+4 - Any recomendations on how to decide the parameters of the DNN/CNN? Is there a pipeline we should follow?
