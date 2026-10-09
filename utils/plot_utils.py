@@ -1,5 +1,6 @@
 from pathlib import Path
 from PIL import Image
+from IPython.display import display, HTML
 
 import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
@@ -120,3 +121,54 @@ def model_confusion_matrix(model, test_ds, diseases):
     plt.title("Confusion Matrix")
     plt.tight_layout()
     plt.show()
+
+    # Build per-class statistics
+    rows = []
+
+    for i, disease in enumerate(diseases):
+        total = cm[i].sum()
+        correct = cm[i, i]
+        mistakes = []
+
+        for j, predicted_disease in enumerate(diseases):
+            if i != j and cm[i, j] > 0:
+                count = cm[i, j]
+                percentage = count / total * 100 if total else 0
+
+                mistakes.append(
+                    f"{predicted_disease}: {count} ({percentage:.2f}%)"
+                )
+
+        accuracy_percentage = (
+            correct / total * 100 if total else 0
+        )
+
+        rows.append({
+            "Real value": disease,
+            "Accuracy (absolute and %)": (
+                f"{correct}/{total} ({accuracy_percentage:.2f}%)"
+            ),
+            "Mistakes (list and %)": (
+                "; ".join(mistakes) if mistakes else "None"
+            )
+        })
+
+    results = pd.DataFrame(rows)
+
+    # Display table inside a scrollable container
+    display(HTML(
+        results.to_html(index=False, escape=True)
+        .replace(
+            '<table ',
+            '<table style="white-space: nowrap; border-collapse: collapse;" '
+        )
+        .join([]) if False else
+        f"""
+        <div style="max-width: 100%; max-height: 500px;
+                    overflow: auto; border: 1px solid #ccc;">
+            {results.to_html(index=False, escape=True)}
+        </div>
+        """
+    ))
+
+    #return results
