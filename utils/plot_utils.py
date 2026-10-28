@@ -1,6 +1,7 @@
 from pathlib import Path
 from PIL import Image
 from IPython.display import display, HTML
+import html as html_lib
 
 import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
@@ -469,3 +470,92 @@ def plot_coinciding_mistakes(mistakes_1, mistakes_2, diseases, resnet_preprocess
 
     plt.tight_layout()
     plt.show()
+
+# Plots a table with all unique mistakes of each model and its probabilities
+def plot_unique_mistakes(rows, diseases):
+    if not rows:
+        print("No unique mistakes found.")
+        return
+
+    table_data = [
+        {
+            "Mistook image": row["index"],
+            "True value": diseases[row["true_idx"]],
+            "First model top 3 predictions": "<br>".join(
+                f"{i}. {diseases[int(class_idx)]} "
+                f"({row['prediction_1'][class_idx]:.2%})"
+                for i, class_idx in enumerate(
+                    row["top3_indices_1"], start=1
+                )
+            ),
+            "Second model top 3 predictions": "<br>".join(
+                f"{i}. {diseases[int(class_idx)]} "
+                f"({row['prediction_2'][class_idx]:.2%})"
+                for i, class_idx in enumerate(
+                    row["top3_indices_2"], start=1
+                )
+            )
+        }
+        for row in rows
+    ]
+
+    df = pd.DataFrame(table_data)
+
+    # Escape ordinary cell values, but allow <br> in prediction columns.
+    columns = list(df.columns)
+    html_rows = []
+
+    for _, row in df.iterrows():
+        cells = []
+
+        for column in columns:
+            value = str(row[column])
+
+            if column in (
+                "First model top 3 predictions",
+                "Second model top 3 predictions"
+            ):
+                cells.append(f"<td>{value}</td>")
+            else:
+                cells.append(f"<td>{html_lib.escape(value)}</td>")
+
+        html_rows.append("<tr>" + "".join(cells) + "</tr>")
+
+    html = (
+        '<table><colgroup>'
+        '<col style="width: 14.3%;">'
+        '<col style="width: 28.57%;">'
+        '<col style="width: 28.57%;">'
+        '<col style="width: 28.57%;">'
+        '</colgroup><thead><tr>'
+        + "".join(
+            f"<th>{html_lib.escape(col)}</th>"
+            for col in columns
+        )
+        + "</tr></thead><tbody>"
+        + "".join(html_rows)
+        + "</tbody></table>"
+    )
+
+    display(HTML(
+        f"""
+        <div style="max-width:100%; max-height:600px; overflow:auto;">
+            <style>
+                table {{ border-collapse: collapse; width: 100%; }}
+                th, td {{
+                    border: 1px solid #ccc;
+                    padding: 8px;
+                    text-align: left;
+                    vertical-align: top;
+                }}
+                th {{
+                    position: sticky;
+                    top: 0;
+                    background: #e0e0e0;
+                    color: #222222;
+                }}
+            </style>
+            {html}
+        </div>
+        """
+    ))

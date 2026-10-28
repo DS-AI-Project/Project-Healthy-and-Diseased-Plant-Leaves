@@ -410,3 +410,79 @@ def analyze_shap(model, X_val, y_val, diseases, indices, resnet_preprocess=False
         })
 
     return results
+
+def analyze_unique_mistakes(mistakes_1, mistakes_2, model_1, model_2, X_val, y_val, resnet_preprocess=(False, True)):
+    if len(resnet_preprocess) != 2:
+        raise ValueError(
+            "resnet_preprocess must be a tuple of two booleans."
+        )
+
+    # Match mistakes by their original dataset index.
+    mistakes_by_index_1 = {
+        mistake["index"]: mistake for mistake in mistakes_1
+    }
+    mistakes_by_index_2 = {
+        mistake["index"]: mistake for mistake in mistakes_2
+    }
+
+    # Images misclassified by exactly one model.
+    unique_indices = sorted(
+        set(mistakes_by_index_1) ^ set(mistakes_by_index_2)
+    )
+
+    if not unique_indices:
+        print("No unique mistakes found.")
+        return []
+
+    rows = []
+
+    for idx in tqdm(unique_indices):
+        image_path = X_val[idx]
+        true_idx = int(y_val[idx])
+
+        # Reuse predictions from the mistake analysis when available.
+        if idx in mistakes_by_index_1:
+            prediction_1 = mistakes_by_index_1[idx]["prediction"]
+        else:
+            image_1, _ = load_image(
+                image_path,
+                true_idx,
+                resnet_preprocess=resnet_preprocess[0],
+            )
+            prediction_1 = model_1(
+                image_1[tf.newaxis, ...],
+                training=False,
+            ).numpy()[0]
+
+        if idx in mistakes_by_index_2:
+            prediction_2 = mistakes_by_index_2[idx]["prediction"]
+        else:
+            image_2, _ = load_image(
+                image_path,
+                true_idx,
+                resnet_preprocess=resnet_preprocess[1],
+            )
+            prediction_2 = model_2(
+                image_2[tf.newaxis, ...],
+                training=False,
+            ).numpy()[0]
+
+        # Get the top 3 predictions from each model.
+        top3_indices_1 = np.argsort(prediction_1)[-3:][::-1]
+        top3_indices_2 = np.argsort(prediction_2)[-3:][::-1]
+
+        rows.append({
+            "index": int(idx),
+            "path": str(image_path),
+            "true_idx": true_idx,
+            "pred_idx_1": int(np.argmax(prediction_1)),
+            "pred_idx_2": int(np.argmax(prediction_2)),
+            "prediction_1": prediction_1,
+            "prediction_2": prediction_2,
+            "top3_indices_1": top3_indices_1,
+            "top3_indices_2": top3_indices_2,
+            "confidence_1": float(np.max(prediction_1)),
+            "confidence_2": float(np.max(prediction_2)),
+        })
+
+    return rows
