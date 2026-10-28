@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 
 import random
+import math
 
 def plot_random_dataset_images(dataset_path, sets):
     arrays = {
@@ -153,16 +154,27 @@ def model_confusion_matrix(model, test_ds, diseases):
             )
         })
 
+    # Add overall accuracy as the final row
+    total_correct = np.trace(cm)
+    total_samples = cm.sum()
+    overall_accuracy = (
+        total_correct / total_samples * 100
+        if total_samples else 0
+    )
+
+    rows.append({
+        "Real value": "Overall Accuracy",
+        "Accuracy (absolute and %)": (
+            f"{total_correct}/{total_samples} "
+            f"({overall_accuracy:.2f}%)"
+        ),
+        "Mistakes (list and %)": ""
+    })
+
     results = pd.DataFrame(rows)
 
     # Display table inside a scrollable container
     display(HTML(
-        results.to_html(index=False, escape=True)
-        .replace(
-            '<table ',
-            '<table style="white-space: nowrap; border-collapse: collapse;" '
-        )
-        .join([]) if False else
         f"""
         <div style="max-width: 100%; max-height: 500px;
                     overflow: auto; border: 1px solid #ccc;">
@@ -171,4 +183,289 @@ def model_confusion_matrix(model, test_ds, diseases):
         """
     ))
 
-    #return results
+    # return results
+
+# Plots all premade Grad-CAMs heatmaps
+def plot_cached_gradcam(mistakes, diseases, resnet_preprocess=False, images_per_row=2, max_rows_per_figure=3, 
+                        alpha=0.4, cmap="jet", figsize_per_image=(4, 3)):
+    per_figure = images_per_row * max_rows_per_figure
+
+    for start in range(0, len(mistakes), per_figure):
+        subset = mistakes[start:start + per_figure]
+        n = len(subset)
+        rows = math.ceil(n / images_per_row)
+
+        fig, axes = plt.subplots(
+            rows, images_per_row * 3,
+            figsize=(
+                figsize_per_image[0] * images_per_row * 3,
+                figsize_per_image[1] * rows
+            ),
+            squeeze=False
+        )
+
+        for i, item in enumerate(subset):
+            r = i // images_per_row
+            c = (i % images_per_row) * 3
+
+            true_name = diseases[item["true_idx"]]
+            pred_name = diseases[item["pred_idx"]]
+
+            # Convert the image to displayable RGB values
+            image = item["image"].copy()
+
+            if resnet_preprocess:
+                # Undo ResNet50 preprocessing: BGR -> RGB, add ImageNet means
+                image = image[..., ::-1]
+                image += np.array([103.939, 116.779, 123.68], dtype=np.float32)
+                image = np.clip(image, 0, 255).astype(np.uint8)
+            else:
+                image = np.clip(image, 0, 1)
+
+            idx = item["index"]
+
+            top3_indices = item.get(
+                "top3_indices",
+                np.argsort(item["prediction"])[-3:][::-1]
+            )
+
+            # Original image
+            axes[r, c].imshow(image)
+            prediction_text = "\n".join(
+                f"{rank}. {diseases[class_idx]}: "
+                f"{item['prediction'][class_idx]:.2%}"
+                for rank, class_idx in enumerate(top3_indices, start=1)
+            )
+            axes[r, 0].set_title(
+                f"Image index: {idx}\n"
+                f"True: {true_name}\n"
+                f"Top 3 predictions:\n{prediction_text}",
+                fontsize=9
+            )
+            axes[r, 0].axis("off")
+            
+            # Grad-CAM for true class
+            axes[r, c + 1].imshow(image)
+            axes[r, c + 1].imshow(
+                item["true_heatmap"],
+                cmap=cmap, alpha=alpha, vmin=0, vmax=1
+            )
+            axes[r, c + 1].set_title(
+                f"True-class Grad-CAM: {true_name}",
+                fontsize=8
+            )
+            axes[r, c + 1].axis("off")
+            
+            # Grad-CAM for predicted class
+            axes[r, c + 2].imshow(image)
+            axes[r, c + 2].imshow(
+                item["pred_heatmap"],
+                cmap=cmap, alpha=alpha, vmin=0, vmax=1
+            )
+            axes[r, c + 2].set_title(
+                f"Predicted-class Grad-CAM: {pred_name}",
+                fontsize=8
+            )
+            axes[r, c + 2].axis("off")
+
+        # Hide unused subplot cells
+        for i in range(n, rows * images_per_row):
+            r = i // images_per_row
+            c = (i % images_per_row) * 3
+            for j in range(3):
+                axes[r, c + j].axis("off")
+
+        fig.suptitle(
+            f"Misclassified images ({start + 1}–{start + n} "
+            f"of {len(mistakes)})"
+        )
+        plt.tight_layout()
+        plt.show()
+
+# Plots all premade Shapleys image plots
+def plot_shap(results, diseases, resnet_preprocess=False, max_images_per_figure=4):
+    for start in range(0, len(results), max_images_per_figure):
+        subset = results[start:start + max_images_per_figure]
+
+        fig, axes = plt.subplots(
+            len(subset), 3,
+            figsize=(16, 4.5 * len(subset)),
+            squeeze=False
+        )
+
+        for row, item in enumerate(subset):
+            # Convert the image to displayable RGB values
+            image = item["image"].copy()
+
+            if resnet_preprocess:
+                # Undo ResNet50 preprocessing: BGR -> RGB, add ImageNet means
+                image = image[..., ::-1]
+                image += np.array([103.939, 116.779, 123.68], dtype=np.float32)
+                image = np.clip(image, 0, 255).astype(np.uint8)
+            else:
+                image = np.clip(image, 0, 1)
+            values = item["shap_values"]
+
+            # Original image and top 3 predictions.
+            axes[row, 0].imshow(image)
+
+            top3_indices = item.get(
+                "top3_indices",
+                np.argsort(item["prediction"])[-3:][::-1]
+            )
+
+            prediction_text = "\n".join(
+                f"{rank}. {diseases[class_idx]}: "
+                f"{item['prediction'][class_idx]:.2%}"
+                for rank, class_idx in enumerate(top3_indices, start=1)
+            )
+
+            axes[row, 0].set_title(
+                f"X_val index: {item['index']}\n"
+                f"True: {diseases[item['true_idx']]}\n"
+                f"Top 3 predictions:\n{prediction_text}",
+                fontsize=9
+            )
+            axes[row, 0].axis("off")
+
+            vals = np.asarray(values.values)
+            output_indices = item["output_indices"]
+
+            # Remove the batch dimension.
+            if vals.shape[0] == 1:
+                vals = vals[0]
+
+            for col, class_idx, title in [
+                (1, item["true_idx"], "True-class SHAP"),
+                (2, item["pred_idx"], "Predicted-class SHAP")
+            ]:
+                if class_idx not in output_indices:
+                    axes[row, col].axis("off")
+                    continue
+
+                output_pos = output_indices.index(class_idx)
+
+                # Expected SHAP shape after removing batch:
+                # (height, width, channels, selected_outputs)
+                if vals.ndim == 4:
+                    class_values = vals[..., output_pos]
+                elif vals.ndim == 3 and len(output_indices) == 1:
+                    class_values = vals
+                else:
+                    raise ValueError(
+                        f"Unexpected SHAP shape: "
+                        f"{np.asarray(values.values).shape}"
+                    )
+
+                # Sum channel attributions to get a signed spatial map.
+                spatial_values = class_values.sum(axis=-1)
+
+                vmax = np.max(np.abs(spatial_values)) + 1e-12
+
+                axes[row, col].imshow(image)
+                axes[row, col].imshow(
+                    spatial_values,
+                    cmap="RdBu_r",
+                    vmin=-vmax,
+                    vmax=vmax,
+                    alpha=0.65
+                )
+
+                axes[row, col].set_title(
+                    f"{title}\n{diseases[class_idx]}",
+                    fontsize=9
+                )
+                axes[row, col].axis("off")
+
+        plt.tight_layout()
+        plt.show()
+
+# Plots all commom mistakes of two models images and Grad-CAMs heatmaps for their true and predicted classes
+def plot_coinciding_mistakes(mistakes_1, mistakes_2, diseases, resnet_preprocess=(False, False),
+                             figsize_per_image=(16, 4), alpha=0.4, cmap="jet",):
+    if len(resnet_preprocess) != 2:
+        raise ValueError(
+            "resnet_preprocess must be a tuple of two booleans."
+        )
+
+    # Match mistakes by their original dataset index.
+    mistakes_by_index_1 = {
+        mistake["index"]: mistake for mistake in mistakes_1
+    }
+    mistakes_by_index_2 = {
+        mistake["index"]: mistake for mistake in mistakes_2
+    }
+
+    common_indices = sorted(
+        set(mistakes_by_index_1) & set(mistakes_by_index_2)
+    )
+
+    if not common_indices:
+        print("No coinciding mistakes found.")
+        return
+
+    print(f"Found {len(common_indices)} coinciding mistakes.")
+
+    # Plot one row per shared mistake.
+    fig, axes = plt.subplots(
+        len(common_indices),
+        5,
+        figsize=(
+            figsize_per_image[0],
+            figsize_per_image[1] * len(common_indices),
+        ),
+        squeeze=False,
+    )
+
+    for row, idx in enumerate(common_indices):
+        m1 = mistakes_by_index_1[idx]
+        m2 = mistakes_by_index_2[idx]
+
+        # Convert ResNet-preprocessed images back to RGB [0, 1].
+        # ResNet50 preprocessing: RGB -> BGR, then subtract means.
+        image = m1["image"].astype(np.float32).copy()
+
+        image = np.asarray(
+            Image.open(m1["path"]).convert("RGB")
+        ).astype(np.float32) / 255.0
+
+        # Original image.
+        axes[row, 0].imshow(image)
+        axes[row, 0].set_title(
+            f"Index {idx}\n"
+            f"True: {diseases[m1['true_idx']]}"
+        )
+
+        # Model 1: true-class and predicted-class heatmaps.
+        for col, heatmap_key, title in [
+            (1, "true_heatmap", "Model 1: True class"),
+            (2, "pred_heatmap", "Model 1: Predicted class"),
+        ]:
+            axes[row, col].imshow(image)
+            axes[row, col].imshow(
+                m1[heatmap_key], cmap=cmap, alpha=alpha
+            )
+            axes[row, col].set_title(
+                f"{title}\n"
+                f"{diseases[m1['pred_idx'] if col == 2 else m1['true_idx']]}"
+            )
+
+        # Model 2: true-class and predicted-class heatmaps.
+        for col, heatmap_key, title in [
+            (3, "true_heatmap", "Model 2: True class"),
+            (4, "pred_heatmap", "Model 2: Predicted class"),
+        ]:
+            axes[row, col].imshow(image)
+            axes[row, col].imshow(
+                m2[heatmap_key], cmap=cmap, alpha=alpha
+            )
+            axes[row, col].set_title(
+                f"{title}\n"
+                f"{diseases[m2['pred_idx'] if col == 4 else m2['true_idx']]}"
+            )
+
+        for ax in axes[row]:
+            ax.axis("off")
+
+    plt.tight_layout()
+    plt.show()

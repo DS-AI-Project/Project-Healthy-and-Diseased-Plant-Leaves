@@ -22,7 +22,7 @@ def download_images(dataset_path):
         print(f"Dataset cloned to: {dataset_path.resolve()}")
 
 def download_dataset():
-    # Downloads the paths to the images, along with it's descriptors
+    # Downloads the paths to the images, along with its descriptors
     # load_dataset automatically checks if it's already been downloaded, so this block can be ran everytime without major delays
     dataset = load_dataset(
         "mohanty/PlantVillage",
