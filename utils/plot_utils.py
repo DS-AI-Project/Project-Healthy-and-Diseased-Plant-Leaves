@@ -383,7 +383,7 @@ def plot_shap(results, diseases, resnet_preprocess=False, max_images_per_figure=
 
 # Plots all commom mistakes of two models images and Grad-CAMs heatmaps for their true and predicted classes
 def plot_coinciding_mistakes(mistakes_1, mistakes_2, diseases, resnet_preprocess=(False, False),
-                             figsize_per_image=(16, 4), alpha=0.4, cmap="jet",):
+                             figsize_per_image=(16, 4), alpha=0.4, cmap="jet", show_plot=True):
     if len(resnet_preprocess) != 2:
         raise ValueError(
             "resnet_preprocess must be a tuple of two booleans."
@@ -405,7 +405,11 @@ def plot_coinciding_mistakes(mistakes_1, mistakes_2, diseases, resnet_preprocess
         print("No coinciding mistakes found.")
         return
 
-    print(f"Found {len(common_indices)} coinciding mistakes.")
+    print(f"Found {len(common_indices)} coinciding mistakes out of {len(mistakes_by_index_1) + len(mistakes_by_index_2) - len(common_indices)} " +
+          "total images.")
+
+    if not show_plot:
+        return
 
     # Plot one row per shared mistake.
     fig, axes = plt.subplots(

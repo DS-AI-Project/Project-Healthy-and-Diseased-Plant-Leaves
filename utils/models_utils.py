@@ -112,6 +112,26 @@ def randomize_set(diseases, train_set, train_size, test_set, test_size, valuatio
 
     return (X_train, y_train, X_val, y_val, X_test, y_test)
 
+def separate_specific_conditions(X, y, diseases, conditions):
+    condition_indexes = [
+        diseases.index(condition)
+        for condition in conditions
+    ]
+
+    mask = np.isin(y, condition_indexes)
+
+    X_specific = X[mask]
+    y_specific = y[mask]
+
+    # Remap labels
+    y_specific = np.array([
+        conditions.index(diseases[label])
+        for label in y_specific
+    ], dtype=np.int32)
+
+    return X_specific, y_specific
+
+
 def test_model(model, train_dataset, valuation_dataset, patience=5, learning_rate=0.0001, epochs=10, seed=42):
     tf.keras.utils.set_random_seed(seed)
     
